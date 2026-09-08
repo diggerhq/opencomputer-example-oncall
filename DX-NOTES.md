@@ -69,3 +69,62 @@ the corrected path; a successful cloud replay still needs the live incidents.
 
 Live Sentry ingestion, successful managed reads, and model-produced
 corrections remain pending Sentry access. No Production deployment was made.
+
+## 2026-09-08 — Sentry access and integration choice
+
+Created `digger/opencomputer-oncall-demo` with default alert rules disabled.
+Sentry's documented [organization project creation API](https://docs.sentry.io/api/projects/create-a-project-for-an-organization/)
+supports members when member project creation is enabled, creating a personal
+team for the new project. Creating under the existing shared team had been
+denied; its permissions were not changed.
+
+The agent retains the managed REST connection. Replay needs the complete
+structured `contexts.oncall.snapshot`, validated against the original capture.
+[Sentry MCP](https://github.com/getsentry/sentry-mcp) is useful for broader
+issue exploration, but its event tool returns formatted context. Sentry's
+[event formatting limits](https://github.com/getsentry/sentry/blob/master/src/sentry/issues/formatting/limits.py)
+can truncate that context, so it is not a reliable exact snapshot transport.
+The [Sentry CLI](https://cli.sentry.dev/) provides JSON event reads, but using
+it inside this agent would add installation and authentication plumbing.
+The current reader already supplies the one operation this example needs.
+
+Local setup used Sentry CLI 0.44.1 device login and exported its OAuth access
+token into the ignored `.env` and the managed Development secret. The agent
+does not receive the token in its workspace. This exported value is a static
+copy: [CLI refresh](https://github.com/getsentry/cli/blob/0.44.1/packages/cli/src/lib/db/auth.ts)
+does not update the deployed secret, and [Sentry refresh rotates access tokens](https://github.com/getsentry/sentry/blob/master/src/sentry/models/apitoken.py).
+Re-export and update the managed secret after refresh or expiry. Use a
+dedicated read-scoped API token for a persistent deployment.
+
+## 2026-09-08 — Both live investigations completed
+
+Both commands completed against the real Sentry development project and the
+same OpenComputer deployment recorded above. The local sender confirmed that
+Sentry preserved the exact event ID, release and snapshot before dispatch.
+Both agents then read those events through the managed connection and ran
+the packaged application in their own workspaces. Neither run required a
+code change to the example or platform.
+
+| Incident | Sentry issue | OpenComputer session | Persisted renders |
+|---|---|---|---|
+| API | [7719416418](https://sentry.io/organizations/digger/issues/7719416418/) | `496854f8-f4a8-4dc9-ad29-958d3450bf20` | 7 |
+| Worker | [7719418038](https://sentry.io/organizations/digger/issues/7719418038/) | `509074c7-c82d-4c2b-b417-ad621d2fd9b1` | 8 |
+
+Every render retained its service's diagnostic pair and the shared tools;
+all used `anthropic/claude-sonnet-5`. There were no failed tool calls or turns.
+
+The API's replay tool returned 500 for `report-legacy` and 200 for
+`report-current`. The agent added a UTC fallback in `app/api.mjs`. Subsequent
+tool results showed the legacy request returning 200 with UTC and the healthy
+London response unchanged.
+
+The worker's first replay made four failed attempts on `job-101`, leaving
+both healthy jobs pending. The agent added `job.status = "failed"` to the
+catch block in `app/worker.mjs`. The next replay retained the bad job's error
+and failed state, then completed `job-102` and `job-103` with their expected
+CSV contents. This confirms queue progress without hiding the malformed job.
+
+These conclusions were checked against replay tool results, not only the
+agents' final reports. Both completed sessions were suspended for inspection.
+The canonical source defects remain unchanged, so the commands can be run
+again for recording. No video was recorded in this verification.
