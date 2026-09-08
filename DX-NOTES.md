@@ -152,3 +152,63 @@ in [Playground](https://github.com/diggerhq/opencomputer/blob/c78110c/web/src/ma
 There is no managed-session terminal, file browser, or patch viewer in that
 UI. The README now points to recorded render and tool-result events rather
 than promising a webhook-session inspector.
+
+## 2026-09-08 — Cloud checkouts and fix PRs
+
+The repository workflow is implemented at
+[`04b1e334`](https://github.com/diggerhq/opencomputer-example-oncall/commit/04b1e334a737824d719341f674d7048afa69401c).
+Both incidents ran against that source commit in the `oncall` Development
+project, using deployment
+`oncall:854ecc9072778a52bc23c5012f5615b70cbeefdd886358c6f32026b3f00c885f`
+and `anthropic/claude-sonnet-5`. Application release:
+`oncall-reporting@3f204e56eb54`.
+
+The local command recorded the exception in Sentry, dispatched its locator,
+printed the cloud session URL, and exited. Each cloud session then read its
+Sentry event, cloned the public repository, checked out the recorded commit,
+and authored a regression test. Shell results contain the actual clone,
+checkout, failing test, correction, and passing test commands. Application
+source is no longer packaged in the agent deployment.
+
+| Incident | Cloud session | Fix PR | Original source with new regression | Corrected source |
+|---|---|---|---|---|
+| API | [750bb025](https://app.opencomputer.dev/projects/prj_3bb9edd953db4a3e8536067691fc20c7/sessions/750bb025-7fe2-4452-ae96-d076ff6ce7fa?agent=oncall&environment=development) | [#1](https://github.com/diggerhq/opencomputer-example-oncall/pull/1) | 8 tests: 7 pass, 1 fail | 8 pass |
+| Worker | [15257883](https://app.opencomputer.dev/projects/prj_3bb9edd953db4a3e8536067691fc20c7/sessions/15257883-0578-493a-ba5c-6d7370741be6?agent=oncall&environment=development) | [#2](https://github.com/diggerhq/opencomputer-example-oncall/pull/2) | 7 tests: 6 pass, 1 fail | 7 pass |
+
+The managed PR tool independently reproduced those before/after results
+from the actual changed files and embedded the test output in each PR body.
+Each diff changes one application line and adds one regression test; existing
+tests, fixtures, and replay code remain unchanged. GitHub application CI is
+green on both PRs. They remain open and unmerged. No fix was deployed or
+marked resolved in Sentry.
+
+The API session has 17 persisted renders; the worker has 22. Every API render selected
+`inspect_record` and `replay_request`; every worker render selected
+`inspect_queue` and `replay_worker`. Each also selected the shared Sentry,
+shell, file, and PR tools. The model and deployment were identical throughout.
+These are persisted render records, not a capture of provider requests.
+
+The API session returned its PR URL, completed the turn, and was suspended.
+The worker reached `open_fix_pull_request`, then recorded
+`runtime.disconnected` at `2026-09-08T15:03:37.581Z` (event 161). GitHub
+nevertheless received the commit and PR, and CI passed. The session recorded
+neither the publication tool's result nor a final response; inspection showed
+`waiting_runtime`, its turn queued, and `microvmState: running`. The public
+disconnect event contained no reason. This establishes a lost runtime
+connection and an external action completed without a recorded result; it
+does not establish a VM crash or its cause. No publication was retried.
+
+A complete event read also contains GitHub requests after the disconnect,
+including `POST /pulls` returning 201 at `15:03:54.794Z`, followed by five
+more renders. Those requests and renders continued to be recorded even while
+tool-result and turn-completion delivery was absent. The disconnected worker
+session was subsequently suspended, preserving the evidence. Its turn remains
+unfinished; suspension is not recovery. The terminal follower now describes
+connection loss and directs the operator to check the PR before retrying,
+rather than implying that execution and external actions necessarily stopped.
+
+Local validation before deployment passed 81 tests, typecheck, and authoring
+doctor. Doctor's two missing-local-secret warnings were expected: both
+credentials were configured as managed Development secrets. Main's demo
+harness and application CI passed. No platform code change or Production
+deployment was made, and no video was recorded in this verification.

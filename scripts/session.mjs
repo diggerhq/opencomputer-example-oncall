@@ -89,7 +89,10 @@ export async function followSession(sessionId, config) {
         });
         console.log(suspended.ok ? "OpenComputer: session suspended." : `OpenComputer: session finished; suspend returned HTTP ${suspended.status}.`);
         return;
-      } else if (event.type === "turn.failed" || event.type === "session.failed" || event.type === "runtime.disconnected") {
+      } else if (event.type === "runtime.disconnected") {
+        const reason = data.message ?? data.reason;
+        throw new Error(`OpenComputer runtime connection lost${reason ? `: ${formatToolOutput(reason)}` : ""}. Recorded output may be incomplete. Check session ${sessionId} and GitHub pull requests before retrying.`);
+      } else if (event.type === "turn.failed" || event.type === "session.failed") {
         throw new Error(`OpenComputer session stopped: ${formatToolOutput(data.message ?? data.reason ?? event.type)}`);
       }
     }

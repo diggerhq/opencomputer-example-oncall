@@ -75,3 +75,34 @@ test("following displays normalized tool results but preserves the original even
     await rm(log, { force: true });
   }
 });
+
+test("a runtime disconnect preserves incomplete evidence without retrying or claiming the PR failed", async (t) => {
+  const sessionId = `test-disconnect-${randomUUID()}`;
+  const log = new URL(`../.oncall/${sessionId}.jsonl`, import.meta.url);
+  const events = [
+    { seq: 1, type: "tool.started", data: { tool: "open_fix_pull_request", input: { explanation: "Fix the report worker" } } },
+    { seq: 2, type: "runtime.disconnected", data: {} },
+  ];
+  const printed = [];
+  const requests = [];
+  t.mock.method(console, "log", (...args) => printed.push(args.join(" ")));
+  t.mock.method(globalThis, "fetch", async (url, options) => {
+    requests.push({ url, method: options.method ?? "GET" });
+    return new Response(JSON.stringify({ events }));
+  });
+  try {
+    await assert.rejects(followSession(sessionId, { origin: "https://example.invalid", apiKey: "test-only" }), (error) => {
+      assert.match(error.message, /OpenComputer runtime connection lost/);
+      assert.match(error.message, /Recorded output may be incomplete/);
+      assert.ok(error.message.includes(`Check session ${sessionId} and GitHub pull requests before retrying`));
+      assert.ok(!error.message.includes("session stopped"));
+      return true;
+    });
+    assert.equal(requests.length, 1);
+    assert.equal(requests[0].method, "GET");
+    assert.ok(!printed.join("\n").includes("session suspended"));
+    assert.deepEqual((await readFile(log, "utf8")).trim().split("\n").map(JSON.parse), events);
+  } finally {
+    await rm(log, { force: true });
+  }
+});

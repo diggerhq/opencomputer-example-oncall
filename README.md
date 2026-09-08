@@ -16,8 +16,8 @@ The reporting app has two deliberately introduced defects:
 
 | Sentry incident | Context supplied to the model | Fix to review |
 |---|---|---|
-| One report request returns 500; another works | API runbook, `inspect_record`, `replay_request` | A timezone fallback fixes the failing request and preserves the healthy response |
-| One job keeps failing; healthy jobs never start | Worker runbook, `inspect_queue`, `replay_worker` | Isolating the bad job lets both healthy jobs complete |
+| One report request returns 500; another works | API runbook, `inspect_record`, `replay_request` | [PR #1](https://github.com/diggerhq/opencomputer-example-oncall/pull/1): a timezone fallback fixes the failing request and preserves the healthy response |
+| One job keeps failing; healthy jobs never start | Worker runbook, `inspect_queue`, `replay_worker` | [PR #2](https://github.com/diggerhq/opencomputer-example-oncall/pull/2): isolating the bad job lets both healthy jobs complete |
 
 Both get Sentry, shell, file-editing, and PR tools. The deployment and model
 are identical; the worker runbook and diagnostic tool definitions are absent
@@ -116,6 +116,10 @@ npm run demo -- worker --follow
 
 These commands display events from the cloud session. Following a completed
 session suspends it while retaining its workspace.
+If the runtime disconnects, check GitHub before retrying: a PR can have been
+created even when its tool result never reached the session. The worker run
+behind PR #2 encountered this; [DX-NOTES](DX-NOTES.md#2026-09-08--cloud-checkouts-and-fix-prs)
+records the interruption.
 
 Compare the two **Tools** lines. In the dashboard session's **Events** tab,
 `agent.rendered` contains the instructions and selected tools;
