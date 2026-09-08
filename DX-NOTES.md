@@ -329,3 +329,35 @@ Use the README's native inspection commands for recording. `session attach`
 shows messages and tool progress; command output and hook tool selection
 are in dashboard Events or `sessions tail --json`. Setup is already complete
 on this checkout; avoid displaying its credential-bearing URL in a recording.
+
+## 2026-09-08 — Sentry delivers to the agent; both incidents fixed end to end
+
+Sentry organization `opencomputer`, project `opencomputer-oncall-demo`,
+both created through the API with the new account's CLI login. The
+internal integration `opencomputer-on-call-4b8195` has the webhook URL as
+its webhook; the issue alert rule "On-call agent: new issue" fires on
+`FirstSeenEventCondition` with the action
+`notify_event_service.NotifyEventServiceAction` for that integration. The
+`NotifyEventSentryAppAction` form is refused for an integration without an
+alert-rule UI schema ("Please configure your integration settings"); the
+service action is the one Sentry uses for such integrations. Deployment
+`oncall:05830eaa…` pins the new slugs.
+
+Two runs of `npm run demo`, with no call from the laptop to OpenComputer:
+
+| incident | Sentry issue | delivery accepted | session | fix PR | checks |
+|---|---|---|---|---|---|
+| API | [7720368878](https://sentry.io/organizations/opencomputer/issues/7720368878/) | 22:24:15 UTC, attempt 1 | `dd2cfe96-e88a-7d27-cc61-4aa710d728d3` | [#3](https://github.com/diggerhq/opencomputer-example-oncall/pull/3) | green |
+| worker | [7720373732](https://sentry.io/organizations/opencomputer/issues/7720373732/) | 22:27:45 UTC, attempt 1 | `d5a6e36b-5e57-7b85-3fdb-eb8cacdfa29e` | [#4](https://github.com/diggerhq/opencomputer-example-oncall/pull/4) | green |
+
+Each session read its event through the managed Sentry connection, cloned
+the pinned commit, wrote the regression test, corrected one line, ran the
+suite, and published through the managed PR tool; every render kept its
+service's diagnostic pair. Both sessions were ended after inspection. The
+PRs stay open. The demo command found each delivery in the webhook's
+request ledger within its first poll after Sentry confirmed the event.
+
+Credentials: the `.env` token is the CLI's OAuth token for the new
+account, with the admin scopes used for setup; it is also the managed
+Development secret. Replace it with a read-scoped token via `npm run setup`
+when the demo settles, and revoke the broad one.

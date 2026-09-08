@@ -7,5 +7,5 @@ export const checkoutDirectory = "repository";
 // body names the project by id only, so the slugs the event reader needs
 // are pinned here, with the deployment. `npm run setup` checks they match
 // SENTRY_ORG and SENTRY_PROJECT in .env.
-export const sentryOrganization = "digger";
+export const sentryOrganization = "opencomputer";
 export const sentryProject = "opencomputer-oncall-demo";
