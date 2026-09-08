@@ -52,7 +52,8 @@ try {
     console.log("\nFollowing OpenComputer events; closing this terminal does not stop the cloud session.");
     await followSession(sessionId, oc);
   } else {
-    console.log(`Optional terminal view: npm run follow -- ${service}`);
+    console.log(`Watch the agent: npx opencomputer session attach ${sessionId}`);
+    console.log(`Inspect recorded tool results: npx opencomputer sessions tail ${sessionId} --json`);
   }
 } catch (error) {
   console.error(error.message);

@@ -212,3 +212,30 @@ doctor. Doctor's two missing-local-secret warnings were expected: both
 credentials were configured as managed Development secrets. Main's demo
 harness and application CI passed. No platform code change or Production
 deployment was made, and no video was recorded in this verification.
+
+## 2026-09-08 — Use the product's inspection commands
+
+The walkthrough now follows an operator through the Sentry issue, the
+deployed agent's investigation, and its GitHub PR. It uses the installed
+OpenComputer CLI 0.6.7 directly: scoped `logs` finds the session making the
+Sentry read; `session attach` displays messages and tool progress;
+`sessions tail --json` exposes tool results and rendered tool selection.
+Read-only calls against the existing Development sessions verified these
+surfaces. `logs --limit 10` selects recent entries and supports `--follow`.
+`session list` is account-wide and has no agent/environment filter.
+
+The example-specific `follow` helper is no longer the documented recording
+path. It polls events, formats output, writes local JSONL, and suspends on
+completion. The native viewers neither drive execution nor suspend it;
+Ctrl-C only detaches. Their remaining presentation gap is real: `attach`
+omits command output, while `tail` and dashboard Events expose raw JSON.
+
+Alert delivery is still simulated by `scripts/demo.mjs`: the app captures
+a real exception in Sentry, then the script separately invokes OpenComputer.
+A fully automatic operator story needs Sentry itself to make that invocation.
+[Sentry's issue-alert webhook](https://docs.sentry.io/integrations/integration-platform/webhooks/issue-alerts/)
+has a provider-specific body; OpenComputer currently requires `text` or
+`payload` at the top level. A translator would bridge those formats. Current
+[Sentry custom integrations support webhook headers](https://docs.sentry.io/api/integration/update-an-existing-custom-integration/),
+so accepting raw webhook bodies in OpenComputer is another possible product
+path. Neither integration path was implemented or live-validated here.

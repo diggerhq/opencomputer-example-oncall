@@ -9,6 +9,77 @@ worker incidents need queue inspection and worker replay. **Each service's
 tools and instructions live together in an OpenComputer hook.** The same agent
 handles both by selecting the hook for the incoming alert.
 
+## Walk through an incident
+
+Complete the [setup](#setup) once, then run from the current published `main`.
+
+A customer opens an older report and gets a 500. Trigger that request:
+
+```sh
+npm run demo -- api
+```
+
+Open the printed **Sentry issue**. The exception is
+`TypeError: Cannot read properties of null (reading 'trim')` on
+`GET /reports/report-legacy`. The event includes the source release and the
+report data needed to reproduce it.
+
+The demo command records the error in Sentry, forwards its event locator to
+the deployed agent's webhook, and exits. **Alert delivery currently comes
+from this script. Sentry is not yet configured to notify the agent itself.**
+The investigation continues in OpenComputer after the command returns.
+
+Check what the on-call agent is doing using the OpenComputer CLI:
+
+```sh
+npx opencomputer logs --agent oncall --environment development --limit 10 --follow
+```
+
+The Sentry request in the logs identifies the session reading the incident.
+Copy its ID, press Ctrl-C to stop watching the logs, then attach to that session:
+
+```sh
+npx opencomputer session attach <session-id>
+```
+
+The agent reads the Sentry event, clones the repository at the failing commit,
+compares the broken report with a healthy one, and writes a regression test.
+It observes the failure, corrects the code, and runs the tests again. `attach`
+shows the agent's messages and tool progress; Ctrl-C detaches the viewer.
+
+For the recorded commands, test results, and selected diagnostic tools, use
+the session's **Events** tab in the dashboard or the native event stream:
+
+```sh
+npx opencomputer sessions tail <session-id> --json
+```
+
+These views expose raw events: `tool.completed` holds the command results,
+and `agent.rendered` holds the instructions and available tools. Add
+`--no-follow` to read the existing events and exit.
+
+Open the **PR linked in the agent's response**. It contains the code change,
+a new regression test, and output showing that test failing before the fix
+and passing afterward. The publisher independently checks the changed files;
+GitHub CI runs the application tests again. The
+[API fix from a completed run](https://github.com/diggerhq/opencomputer-example-oncall/pull/1)
+shows the resulting patch. Leave it unmerged so the incident stays reproducible.
+Once finished inspecting, end the session with
+`npx opencomputer session end <session-id>`.
+
+Now a different incident: report jobs stop completing. Trigger it with
+`npm run demo -- worker`, open its Sentry issue, and inspect the new session
+the same way. The agent gets queue inspection and worker replay tools for
+this investigation. It isolates the bad job so healthy jobs can finish;
+[the worker PR](https://github.com/diggerhq/opencomputer-example-oncall/pull/2)
+shows that correction. The deployment and model are the same in both cases.
+
+Each demo command creates a new event and fix branch. If the runtime
+disconnects, check GitHub before retrying: publication may have succeeded
+before its result reached the session. The worker run above encountered
+this; [DX-NOTES](DX-NOTES.md#2026-09-08--cloud-checkouts-and-fix-prs) records it.
+No fix is deployed or marked resolved in Sentry.
+
 ## How the agent gets its tools
 
 OpenComputer calls your agent function before each model step. A
@@ -41,7 +112,7 @@ ${runbook}`;
 Only the selected hook's diagnostic tools enter the model call. Both services
 share the Sentry reader, coding tools, and PR publisher.
 
-## Run the failures
+## Setup
 
 Requires Node 22.19+.
 
@@ -49,15 +120,7 @@ Requires Node 22.19+.
 git clone https://github.com/diggerhq/opencomputer-example-oncall.git
 cd opencomputer-example-oncall
 npm ci
-npm run incident -- api
-npm run incident -- worker
 ```
-
-The API returns 500 for the legacy report and 200 for the current report.
-The worker makes four attempts on `job-101`; `job-102` and `job-103` remain
-pending with zero attempts. These commands run locally without accounts.
-
-## Send them to the agent
 
 Create a Sentry Node.js development project and a
 [read token](https://docs.sentry.io/api/guides/create-auth-token/)
@@ -70,8 +133,6 @@ the live demo requires permission to open branches and PRs there.
 ```sh
 npx opencomputer login
 npm run setup
-npm run demo -- api
-npm run demo -- worker
 ```
 
 `setup` creates an `oncall` project or reuses the local binding, uploads both
@@ -79,53 +140,7 @@ tokens, deploys to **Development**, and saves a webhook credential locally.
 Managed connections attach credentials to Sentry and GitHub requests;
 neither token enters the agent's checkout.
 
-Run from the current published `main` commit. Each command triggers the
-exception on your laptop, records it in Sentry with its source commit and a
-small diagnostic snapshot, then forwards the locator to OpenComputer. This
-script supplies alert delivery. It prints the cloud session URL and exits;
-the agent continues independently.
-
-## Follow the fix
-
-Open the session URL. The agent reads Sentry, clones this public repository,
-checks out the incident's commit, and investigates `app/`. It adds a regression
-test under `app/test/`, shows it failing, edits the affected service, and runs
-the application tests again. The final response links the fix PR.
-
-For readable commands, diffs, and test results in a terminal:
-
-```sh
-npm run follow -- api
-# Or trigger and follow a new incident together:
-npm run demo -- worker --follow
-```
-
-These commands display events from the cloud session. Following a completed
-session suspends it while retaining its workspace.
-If the runtime disconnects, check GitHub before retrying: a PR can have been
-created even when its tool result never reached the session. The worker run
-behind PR #2 encountered this; [DX-NOTES](DX-NOTES.md#2026-09-08--cloud-checkouts-and-fix-prs)
-records the interruption.
-
-Compare the two **Tools** lines. In the dashboard session's **Events** tab,
-`agent.rendered` contains the instructions and selected tools;
-`tool.completed` contains the recorded results. These webhook sessions show
-raw event JSON rather than the Playground's render inspector.
-
-The PR tool reads the actual changed files and independently tests them
-against the original and corrected source before publishing. The same new
-test must fail before and pass after; existing application tests must pass.
-Only the affected service and its new regression test enter the PR. GitHub
-CI runs the application suite again.
-See the agent's [API fix](https://github.com/diggerhq/opencomputer-example-oncall/pull/1)
-and [worker fix](https://github.com/diggerhq/opencomputer-example-oncall/pull/2)
-for the actual patches and before/after test output.
-
-Leave demo PRs unmerged so the incidents remain reproducible. Every demo
-command creates a new event and fix branch; retrying publication for the
-same event reuses its PR. No fix is deployed or marked resolved in Sentry.
-
-`npm run test:app` runs the application suite. `npm run check` also checks the
-demo machinery, which intentionally verifies the two faults on `main`.
-After changing source, `npm run setup` redeploys it. See [DX-NOTES.md](DX-NOTES.md)
-for verification.
+To exercise the failures without accounts, use `npm run incident -- api`
+or `npm run incident -- worker`. `npm run test:app` runs the application
+suite; `npm run check` also checks the demo machinery and intentional faults.
+After changing agent source, redeploy with `npm run setup`.
