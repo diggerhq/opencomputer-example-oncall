@@ -6,7 +6,7 @@ export async function handleRequest(request, state) {
   const report = match && state.reports.find((item) => item.id === decodeURIComponent(match[1]));
   if (!report) return Response.json({ error: "Report not found" }, { status: 404 });
 
-  const timezone = report.timezone.trim();
+  const timezone = (report.timezone ?? "UTC").trim();
   const generatedAt = new Intl.DateTimeFormat("en-GB", {
     timeZone: timezone,
     dateStyle: "medium",
