@@ -1,0 +1,30 @@
+{
+  "name": "opencomputer-example-oncall",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "incident": "node scripts/incident.mjs",
+    "demo": "node scripts/demo.mjs",
+    "setup": "node scripts/setup.mjs",
+    "prepare:agent": "node scripts/prepare-agent.mjs",
+    "predoctor": "npm run prepare:agent",
+    "doctor": "opencomputer doctor",
+    "predeploy": "npm run prepare:agent",
+    "deploy": "opencomputer deploy --alias development",
+    "typecheck": "tsc --noEmit",
+    "test": "tsx --test test/*.test.*",
+    "check": "npm run typecheck && npm test && npm run doctor"
+  },
+  "dependencies": {
+    "@opencomputer/agent": "0.5.2",
+    "@sentry/node": "10.73.0"
+  },
+  "devDependencies": {
+    "@opencomputer/cli": "0.6.7",
+    "@types/node": "^22.0.0",
+    "tsx": "^4.20.5",
+    "typescript": "^5.9.0"
+  },
+  "engines": { "node": ">=22.19.0" }
+}
