@@ -9,6 +9,8 @@ With Node 22.19, authoring package 0.5.2, CLI 0.6.7 and Sentry SDK 10.73.0,
 `npm run check` passes: 33 tests, typecheck, and authoring doctor with zero
 errors. Doctor warns that the Sentry token has no local Development value;
 the token is intended to be uploaded to the managed secret store.
+The same checks passed on GitHub's Ubuntu runner in
+[the initial CI run](https://github.com/diggerhq/opencomputer-example-oncall/actions/runs/34234930973).
 
 Both incident commands execute the application code. The API returns a
 captured 500 for a legacy record and 200 for the healthy control. The worker
