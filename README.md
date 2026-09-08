@@ -1,32 +1,20 @@
-# On call: tools and runbooks as code
+# An on-call agent that opens fix PRs
 
-API failures and stuck workers need different investigation procedures.
-This example pairs each service's runbook with its diagnostic tools and
-selects which set the model receives from a Sentry alert. One coding agent
-investigates both kinds of incident in OpenComputer: it clones the repository,
-writes a failing regression test, fixes the code, and opens a pull request.
+Send this agent a Sentry error. It clones the repository in OpenComputer,
+reproduces the bug with a failing test, fixes it, and opens a GitHub PR.
 
-With [OpenComputer Serverless Agents](https://docs.opencomputer.dev/agents/hooks),
-**a TypeScript function defines the instructions and tool catalog for each
-model step.** OpenComputer calls it before the model runs, executes the tools
-the model chooses, then calls it again for the next step. Your code controls
-the context; the model decides how to investigate.
+The demo app has two bugs: a request crashes on a missing timezone, and a bad
+job blocks the queue. API incidents need record inspection and request replay;
+worker incidents need queue inspection and worker replay. **Each service's
+tools and instructions live together in an OpenComputer hook.** The same agent
+handles both by selecting the hook for the incoming alert.
 
-The reporting app has two deliberately introduced defects:
+## How the agent gets its tools
 
-| Sentry incident | Context supplied to the model | Fix to review |
-|---|---|---|
-| One report request returns 500; another works | API runbook, `inspect_record`, `replay_request` | [PR #1](https://github.com/diggerhq/opencomputer-example-oncall/pull/1): a timezone fallback fixes the failing request and preserves the healthy response |
-| One job keeps failing; healthy jobs never start | Worker runbook, `inspect_queue`, `replay_worker` | [PR #2](https://github.com/diggerhq/opencomputer-example-oncall/pull/2): isolating the bad job lets both healthy jobs complete |
-
-Both get Sentry, shell, file-editing, and PR tools. The deployment and model
-are identical; the worker runbook and diagnostic tool definitions are absent
-from the API investigation's model calls, and vice versa.
-
-## A hook owns the tools and how to use them
-
-The [API hook](opencomputer/agents/oncall/hooks/api.ts), with its instructions
-shortened:
+OpenComputer calls your agent function before each model step. A
+[hook](https://docs.opencomputer.dev/agents/hooks) can register tools for that
+step and return instructions for using them. The
+[API hook](opencomputer/agents/oncall/hooks/api.ts), abridged:
 
 ```ts
 export function useApiDiagnostics() {
@@ -38,9 +26,8 @@ export function useApiDiagnostics() {
 }
 ```
 
-Calling it adds the two tool definitions to the next model call and returns
-the guidance that goes with them. [`agent.ts`](opencomputer/agents/oncall/agent.ts)
-selects the hook and includes that guidance in its instructions (abridged):
+[`agent.ts`](opencomputer/agents/oncall/agent.ts) selects the hook from the
+alert's service and includes its instructions (abridged):
 
 ```ts
 const runbook = incident.service === "api"
@@ -51,9 +38,8 @@ return `Investigate this Sentry incident, verify a fix, and open a PR.
 ${runbook}`;
 ```
 
-Another service can bring its own tools and runbook in another hook while
-sharing the source checkout, testing, and PR workflow.
-Here, the alert's service stays fixed throughout the investigation.
+Only the selected hook's diagnostic tools enter the model call. Both services
+share the Sentry reader, coding tools, and PR publisher.
 
 ## Run the failures
 
@@ -131,6 +117,9 @@ against the original and corrected source before publishing. The same new
 test must fail before and pass after; existing application tests must pass.
 Only the affected service and its new regression test enter the PR. GitHub
 CI runs the application suite again.
+See the agent's [API fix](https://github.com/diggerhq/opencomputer-example-oncall/pull/1)
+and [worker fix](https://github.com/diggerhq/opencomputer-example-oncall/pull/2)
+for the actual patches and before/after test output.
 
 Leave demo PRs unmerged so the incidents remain reproducible. Every demo
 command creates a new event and fix branch; retrying publication for the
