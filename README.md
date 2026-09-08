@@ -1,33 +1,60 @@
-# On call
+# On call: tools and runbooks as code
 
-One [OpenComputer](https://docs.opencomputer.dev/agents/hooks) agent investigates
-two kinds of Sentry incident. The service in the alert selects its diagnostic
-tools and runbook.
+API failures and stuck workers need different investigation procedures.
+This example pairs each service's runbook with its diagnostic tools and
+selects which set the model receives from a Sentry alert. One coding agent
+investigates both kinds of incident.
 
-The application is small and deliberately broken:
+With [OpenComputer Serverless Agents](https://docs.opencomputer.dev/agents/hooks),
+**a TypeScript function defines the instructions and tool catalog for each
+model step.** OpenComputer calls it before the model runs, executes the tools
+the model chooses, then calls it again for the next step. Your code controls
+the context; the model decides how to investigate.
 
-| Incident | What the agent can inspect and replay |
-|---|---|
-| One report request returns 500; another works | Report records and HTTP requests |
-| One report job keeps failing; healthy jobs never start | Queue state and worker attempts |
+The reporting app has two deliberately introduced defects:
 
-The agent reads the Sentry event, reproduces the failure against the captured
-state, edits a local copy of the application, and checks its correction. Both
-incidents use the same deployment and model.
+| Sentry incident | Context supplied to the model | What the agent verifies |
+|---|---|---|
+| One report request returns 500; another works | API runbook, `inspect_record`, `replay_request` | A timezone fallback fixes the failing request and preserves the healthy response |
+| One job keeps failing; healthy jobs never start | Worker runbook, `inspect_queue`, `replay_worker` | Isolating the bad job lets both healthy jobs complete |
 
-[`agent.ts`](opencomputer/agents/oncall/agent.ts) chooses the runbook:
+Both also get Sentry and source-editing tools. They read the event, reproduce
+the failure, edit a workspace copy of the app, and replay it to check the fix.
+The deployment and model are identical; the worker runbook and diagnostic
+tool definitions are absent from the API investigation's model calls, and
+vice versa.
+
+## A hook owns the tools and how to use them
+
+The [API hook](opencomputer/agents/oncall/hooks/api.ts), with its instructions
+shortened:
+
+```ts
+export function useApiDiagnostics() {
+  useTool(inspectRecord);
+  useTool(replayRequest);
+
+  return "Compare the failing request with a healthy report, " +
+    "then repeat both checks after your correction.";
+}
+```
+
+Calling it adds the two tool definitions to the next model call and returns
+the guidance that goes with them. [`agent.ts`](opencomputer/agents/oncall/agent.ts)
+selects the hook and includes that guidance in its instructions (abridged):
 
 ```ts
 const runbook = incident.service === "api"
   ? useApiDiagnostics()
   : useWorkerDiagnostics();
+
+return `Investigate this Sentry incident and verify a local correction.
+${runbook}`;
 ```
 
-Each hook attaches its tools and returns its instructions. OpenComputer runs
-the agent function before each model step. The API investigation gets
-`inspect_record` and `replay_request`; the worker investigation gets
-`inspect_queue` and `replay_worker`. Both have Sentry and source-editing tools.
-The demo prints the actual tool selection from the session's render events.
+Another service can bring its own tools and runbook in another hook while
+sharing the Sentry reader, source-editing tools, and investigation loop.
+Here, the alert's service stays fixed throughout the investigation.
 
 ## Run the failures
 
@@ -59,28 +86,24 @@ npm run demo -- api
 npm run demo -- worker
 ```
 
-`setup` creates an OpenComputer project named `oncall`, uploads the Sentry
-token, deploys to **Development**, and saves a webhook credential locally.
-It reuses the local project binding on subsequent runs. The Sentry token is
-attached by a managed connection when the agent makes a GET request; it is
-not included in the agent's workspace.
+`setup` creates an `oncall` project or reuses the local binding, uploads the
+Sentry token, deploys to **Development**, and saves a webhook credential
+locally. A managed connection attaches the Sentry token to the agent's GET
+requests; the token stays outside its workspace.
 
-Each demo command triggers the real exception, waits for its Sentry event,
-then forwards the event ID and service to the OpenComputer webhook. This
-script supplies alert delivery; a native Sentry alert integration is not
-required. The terminal follows the investigation and prints its report.
+Each demo command triggers the exception, waits for its Sentry event, and
+forwards the event ID and service to the OpenComputer webhook. The script
+supplies alert delivery and follows the investigation in the terminal.
 The completed session is suspended for inspection.
 
-The deployed bundle includes the app source. Sentry carries a small synthetic
-snapshot; a release check prevents replaying it against different source.
-Each replay starts a fresh process and runs the agent's current edits.
-Sentry is the only external integration.
+The deployment includes the app source; Sentry carries a small synthetic
+snapshot with a matching release. Replays execute the agent's current edits
+in a fresh process. Sentry is the only external integration.
 
-For a recording, compare the two **Tools** lines and open the hook branch
-above. The dashboard's session inspector shows the instructions and tools
-for each model step. Repeat either command for a new incident and workspace.
-The correction stays in that workspace; it is not deployed or marked resolved
-in Sentry. The repository's two defects remain available for the next run.
+Compare the two **Tools** lines. The dashboard's session inspector shows the
+instructions and tools for each model step. Repeat either command for a new
+incident and workspace. The correction stays there; it is not deployed or
+marked resolved in Sentry. The repository's defects remain for the next run.
 
 `npm run check` runs the fixture/tool tests, typecheck and authoring doctor.
 After changing source, `npm run setup` redeploys it. See [DX-NOTES.md](DX-NOTES.md)
