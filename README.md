@@ -9,6 +9,38 @@ worker incidents need queue inspection and worker replay. **Each service's
 tools and instructions live together in an OpenComputer hook.** The same agent
 handles both by selecting the hook for the incoming alert.
 
+## How the agent gets its tools
+
+OpenComputer calls your agent function before each model step. A
+[hook](https://docs.opencomputer.dev/agents/hooks) can register tools for that
+step and return instructions for using them. The
+[API hook](opencomputer/agents/oncall/hooks/api.ts), abridged:
+
+```ts
+export function useApiDiagnostics() {
+  useTool(inspectRecord);
+  useTool(replayRequest);
+
+  return "Compare the failing request with a healthy report, " +
+    "then repeat both checks after your correction.";
+}
+```
+
+[`agent.ts`](opencomputer/agents/oncall/agent.ts) selects the hook from the
+alert's service and includes its instructions (abridged):
+
+```ts
+const runbook = incident.service === "api"
+  ? useApiDiagnostics()
+  : useWorkerDiagnostics();
+
+return `Investigate this Sentry incident, verify a fix, and open a PR.
+${runbook}`;
+```
+
+Only the selected hook's diagnostic tools enter the model call. Both services
+share the Sentry reader, coding tools, and PR publisher.
+
 ## Walk through an incident
 
 Complete the [setup](#setup) once, then run from the current published `main`.
@@ -83,38 +115,6 @@ disconnects, check GitHub before retrying: publication may have succeeded
 before its result reached the session. The worker run above encountered
 this; [DX-NOTES](DX-NOTES.md#2026-09-08--cloud-checkouts-and-fix-prs) records it.
 No fix is deployed or marked resolved in Sentry.
-
-## How the agent gets its tools
-
-OpenComputer calls your agent function before each model step. A
-[hook](https://docs.opencomputer.dev/agents/hooks) can register tools for that
-step and return instructions for using them. The
-[API hook](opencomputer/agents/oncall/hooks/api.ts), abridged:
-
-```ts
-export function useApiDiagnostics() {
-  useTool(inspectRecord);
-  useTool(replayRequest);
-
-  return "Compare the failing request with a healthy report, " +
-    "then repeat both checks after your correction.";
-}
-```
-
-[`agent.ts`](opencomputer/agents/oncall/agent.ts) selects the hook from the
-alert's service and includes its instructions (abridged):
-
-```ts
-const runbook = incident.service === "api"
-  ? useApiDiagnostics()
-  : useWorkerDiagnostics();
-
-return `Investigate this Sentry incident, verify a fix, and open a PR.
-${runbook}`;
-```
-
-Only the selected hook's diagnostic tools enter the model call. Both services
-share the Sentry reader, coding tools, and PR publisher.
 
 ## Setup
 
