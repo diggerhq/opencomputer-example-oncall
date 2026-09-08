@@ -18,7 +18,9 @@ the agent belong in its cloud checkout and a fix PR; never merge the demo
 fixes or push them to main. Diagnostic tools must
 execute the same application code as the incident generator, never return a
 prewritten diagnosis. Distinguish captured-state replay from live monitoring
-and local checks from live Sentry/OpenComputer evidence.
+and local checks from live Sentry/OpenComputer evidence. Sentry delivers alerts to the agent's
+webhook directly; the demo script records the incident and waits for that
+delivery, it never calls OpenComputer itself.
 
 For incident fix sessions, clone the pinned commit into `repository/`, edit
 only the affected `app/api.mjs` or `app/worker.mjs`, and add its regression

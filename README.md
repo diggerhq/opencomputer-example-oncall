@@ -24,10 +24,10 @@ Open the printed **Sentry issue**. The exception is
 `GET /reports/report-legacy`. The event includes the source release and the
 report data needed to reproduce it.
 
-The demo command records the error in Sentry, forwards its event locator to
-the deployed agent's webhook, and exits. **Alert delivery currently comes
-from this script. Sentry is not yet configured to notify the agent itself.**
-The investigation continues in OpenComputer after the command returns.
+The demo command records the error in Sentry and waits. Sentry's alert rule
+delivers the issue to the agent's webhook; the command prints the session
+that OpenComputer started for it and exits. The investigation continues in
+OpenComputer after the command returns.
 
 Check what the on-call agent is doing using the OpenComputer CLI:
 
@@ -74,7 +74,11 @@ this investigation. It isolates the bad job so healthy jobs can finish;
 [the worker PR](https://github.com/diggerhq/opencomputer-example-oncall/pull/2)
 shows that correction. The deployment and model are the same in both cases.
 
-Each demo command creates a new event and fix branch. If the runtime
+Each demo command creates a new Sentry issue and a new fix branch: the demo
+gives every run its own fingerprint so the "new issue" alert fires each
+time, where a real application would keep Sentry's grouping. A Sentry retry
+of the same alert never starts a second investigation; the webhook takes
+its delivery identity from the event id in the alert body. If the runtime
 disconnects, check GitHub before retrying: publication may have succeeded
 before its result reached the session. The worker run above encountered
 this; [DX-NOTES](DX-NOTES.md#2026-09-08--cloud-checkouts-and-fix-prs) records it.
@@ -126,6 +130,8 @@ Create a Sentry Node.js development project and a
 [read token](https://docs.sentry.io/api/guides/create-auth-token/)
 with **Project: Read** and **Issue & Event: Read**. Copy `.env.example` to
 `.env` and fill in the project's DSN, token, organization slug and project slug.
+The agent pins the same organization and project slugs in
+`opencomputer/agents/oncall/lib/target.ts`; edit them for your project.
 Set `GITHUB_TOKEN` with **Contents: Write** and **Pull requests: Write** on
 this repository. The configured GitHub target is `diggerhq/opencomputer-example-oncall`;
 the live demo requires permission to open branches and PRs there.
@@ -136,9 +142,22 @@ npm run setup
 ```
 
 `setup` creates an `oncall` project or reuses the local binding, uploads both
-tokens, deploys to **Development**, and saves a webhook credential locally.
-Managed connections attach credentials to Sentry and GitHub requests;
-neither token enters the agent's checkout.
+tokens, deploys to **Development**, creates the agent's webhook with the
+Sentry event id as its delivery identity, and prints the webhook URL. Managed
+connections attach credentials to Sentry and GitHub requests; neither token
+enters the agent's checkout.
+
+Then connect Sentry to the agent, once:
+
+1. In Sentry, **Settings → Developer Settings → Custom Integrations → Create
+   Internal Integration**. Set the webhook URL to the one `setup` printed;
+   it carries the webhook's credential, so treat it as one. Enable **Alert
+   Rule Action**. Delivery needs no permissions.
+2. **Alerts → Create Alert → Issues** on the project: when **a new issue is
+   created**, **send a notification via** the integration.
+
+Sentry posts its issue-alert body to the agent as is; the agent reads the
+event id, release, and the application's `oncall` context from it.
 
 To exercise the failures without accounts, use `npm run incident -- api`
 or `npm run incident -- worker`. `npm run test:app` runs the application

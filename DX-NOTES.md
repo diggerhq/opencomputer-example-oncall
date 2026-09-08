@@ -239,3 +239,37 @@ has a provider-specific body; OpenComputer currently requires `text` or
 [Sentry custom integrations support webhook headers](https://docs.sentry.io/api/integration/update-an-existing-custom-integration/),
 so accepting raw webhook bodies in OpenComputer is another possible product
 path. Neither integration path was implemented or live-validated here.
+
+## 2026-09-08 — Direct Sentry delivery, pending the integration
+
+OpenComputer now accepts provider webhooks directly (CLI 0.6.8): the
+webhook URL carries its credential, any JSON body is admitted as the
+agent's payload, and a per-webhook identity source deduplicates provider
+retries. This example therefore drops its own delivery:
+
+- `scripts/demo.mjs` records the incident in Sentry and waits for the
+  alert to reach the agent, found through the webhook's request ledger
+  (`GET .../webhooks/<id>/requests`) as a request created after the
+  incident with an announced session. It no longer posts to OpenComputer.
+- `lib/incident.ts` derives the locator from Sentry's issue-alert body:
+  `data.event.event_id` and `release`, plus the `oncall` context the demo
+  app stamps on every capture. Sentry names the project by id only, so the
+  organization and project slugs are pinned in `lib/target.ts`; `setup`
+  refuses a mismatch with `.env`.
+- `scripts/sentry.mjs` gives every run its own fingerprint, so an alert
+  rule on "a new issue is created" fires per run. Demo grouping only.
+- `setup` creates or updates the webhook with `--identity
+  body:/data/event/event_id` and prints the delivery URL and the two Sentry
+  steps.
+
+Verified locally: 77 example tests and 6 application tests pass, doctor
+clean; deployed as `oncall:f69464e5…` to Development; the identity source is
+set on webhook `wh_2bc70d2a…`. A Sentry-shaped body posted to the URL form
+by hand during the platform release was acknowledged in 0.39 s and ran a
+session.
+
+Not yet verified: the live chain. Creating the internal integration needs
+an organization Manager or Admin; the token in `.env` gets HTTP 403 from
+`POST /api/0/sentry-apps/`, as the handover recorded. Until the integration
+and its alert rule exist, `npm run demo` records the incident and times out
+waiting for a delivery, with a message saying so.

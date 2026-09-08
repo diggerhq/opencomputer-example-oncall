@@ -93,6 +93,10 @@ export async function captureSentryIncident(incident, config, options = {}) {
   scope.setClient(client);
   scope.setTag("service", context.service);
   scope.setContext("oncall", context);
+  // Demo grouping: every run is its own Sentry issue, so an alert rule on
+  // "a new issue is created" fires for each run instead of once per
+  // grouped error. A real application would keep Sentry's default grouping.
+  scope.setFingerprint(["oncall", context.service, crypto.randomUUID()]);
   for (const crumb of (incident.breadcrumbs ?? []).slice(-20)) scope.addBreadcrumb(crumb);
 
   let eventId;

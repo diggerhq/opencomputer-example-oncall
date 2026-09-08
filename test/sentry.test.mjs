@@ -32,6 +32,7 @@ function harness(input, { flush = true } = {}) {
     setClient(client) { calls.client = client; }
     setTag(key, value) { calls.tag = [key, value]; }
     setContext(key, value) { calls.context = { [key]: value }; }
+    setFingerprint(value) { calls.fingerprint = value; }
     addBreadcrumb(value) { (calls.breadcrumbs ??= []).push(value); }
     captureException(error) { calls.error = error; calls.captures++; return eventId; }
   }

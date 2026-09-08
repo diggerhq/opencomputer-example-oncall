@@ -2,7 +2,7 @@ import { useInput, useModel, useTool } from "@opencomputer/agent";
 import { useApiDiagnostics } from "./hooks/api.js";
 import { useWorkerDiagnostics } from "./hooks/worker.js";
 import { readSentryEvent } from "./tools/sentry.js";
-import { parseLocator } from "./lib/incident.js";
+import { locatorFromPayload } from "./lib/incident.js";
 import { openFixPullRequest } from "./tools/github.js";
 import { repository, checkoutDirectory } from "./lib/target.js";
 
@@ -11,8 +11,8 @@ export default function Agent() {
   useModel("anthropic/claude-sonnet-5");
 
   let incident;
-  try { incident = parseLocator(input.payload); } catch {
-    return "You investigate incidents in a reporting application. This request has no valid incident locator, so no diagnostic tools are enabled. A locator needs service (api or worker), organization, project, eventId, release, and full Git commit. Briefly explain what is missing; do not invent an incident or a diagnosis.";
+  try { incident = locatorFromPayload(input.payload); } catch {
+    return "You investigate incidents in a reporting application. This request has no valid incident locator, so no diagnostic tools are enabled. A locator needs service (api or worker), organization, project, eventId, release, and full Git commit, or a Sentry issue-alert body whose event carries the application's oncall context. Briefly explain what is missing; do not invent an incident or a diagnosis.";
   }
 
   useTool(readSentryEvent);

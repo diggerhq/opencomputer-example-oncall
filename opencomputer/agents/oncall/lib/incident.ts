@@ -1,5 +1,6 @@
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { sentryOrganization, sentryProject } from "./target.js";
 
 export type Service = "api" | "worker";
 export type Locator = { service: Service; organization: string; project: string; eventId: string; release: string; commit: string };
@@ -40,6 +41,42 @@ export function parseLocator(value: unknown): Locator {
   const commit = string(input.commit, "commit", 40);
   if (!/^[a-f0-9]{40}$/.test(commit)) throw new Error("commit must be a full lowercase Git SHA");
   return { service: input.service, organization, project, eventId: eventId.toLowerCase(), release: string(input.release, "release", 200), commit };
+}
+
+/**
+ * The incident locator from whatever started the session: the locator
+ * object itself, or a Sentry issue-alert webhook body, whose `data.event`
+ * carries the event id and release and the `oncall` context the demo app
+ * stamps on every capture (service, release, full Git commit). Sentry names
+ * the project by id only; the slugs come from the deployment's target.
+ */
+export function locatorFromPayload(value: unknown): Locator {
+  const payload = object(value, "payload");
+  const data = payload.data;
+  const event = data && typeof data === "object" && !Array.isArray(data)
+    ? (data as Record<string, unknown>).event
+    : undefined;
+  if (!event || typeof event !== "object" || Array.isArray(event)) return parseLocator(value);
+  const record = event as Record<string, unknown>;
+  const contexts = record.contexts && typeof record.contexts === "object" && !Array.isArray(record.contexts)
+    ? (record.contexts as Record<string, unknown>).oncall
+    : undefined;
+  const oncall = contexts && typeof contexts === "object" && !Array.isArray(contexts)
+    ? (contexts as Record<string, unknown>)
+    : {};
+  const release = typeof record.release === "string"
+    ? record.release
+    : record.release && typeof record.release === "object" && !Array.isArray(record.release)
+      ? (record.release as Record<string, unknown>).version
+      : undefined;
+  return parseLocator({
+    service: oncall.service,
+    organization: sentryOrganization,
+    project: sentryProject,
+    eventId: record.event_id,
+    release: release ?? oncall.release,
+    commit: oncall.commit,
+  });
 }
 
 export function normalizeSnapshot(service: Service, value: unknown): ApiSnapshot | WorkerSnapshot {
