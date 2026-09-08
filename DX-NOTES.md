@@ -273,3 +273,59 @@ an organization Manager or Admin; the token in `.env` gets HTTP 403 from
 `POST /api/0/sentry-apps/`, as the handover recorded. Until the integration
 and its alert rule exist, `npm run demo` records the incident and times out
 waiting for a delivery, with a message saying so.
+
+## 2026-09-08 — Review confirms the direct-delivery API run
+
+Reviewed source `b664e07` and the existing live Development run through
+read-only session/event and GitHub API calls. No new incident, deployment,
+or publication was triggered by this review.
+
+The configured project is now `opencomputer/opencomputer-oncall-demo`.
+The local `lib/target.ts` organization override matches `.env` and the
+deployed agent; it remains an uncommitted local customization.
+
+The [Sentry issue](https://sentry.io/organizations/opencomputer/issues/7720368878/)
+corresponds to event `534c46058a104e65978bd5830c1084ae` and
+[session dd2cfe96](https://app.opencomputer.dev/projects/prj_3bb9edd953db4a3e8536067691fc20c7/sessions/dd2cfe96-e88a-7d27-cc61-4aa710d728d3?agent=oncall&environment=development).
+Its persisted render input has `source: webhook`, a Sentry `action: triggered`
+body, and the exact event ID saved by the demo command. The webhook ledger
+records acceptance on attempt 1. This verifies the incident-to-session
+correlation for this run, independently of the demo command's output.
+
+The session recorded 170 events and a completed turn. Its 15 renders all
+selected API diagnostics (`inspect_record`, `replay_request`) and the
+shared Sentry/coding/PR tools. Recorded command results show:
+
+- `git clone` and detached checkout of the published incident commit;
+- the new regression failing on the original source: 6 pass, 1 fail;
+- the one-line timezone correction and the suite passing all 7 tests;
+- successful publication of [PR #3](https://github.com/diggerhq/opencomputer-example-oncall/pull/3),
+  changing only `app/api.mjs` and its new regression test. GitHub application
+  CI passed. The PR remains open and unmerged.
+
+This closes the earlier API integration gate. A worker run through the
+new direct Sentry integration was not verified; the earlier worker evidence
+above used the old dispatch path. No video was recorded by this review.
+
+Two example issues remain:
+
+1. `scripts/demo.mjs:awaitDelivery` selects the newest request after the
+   trigger time without matching the captured event or checking its
+   outcome. An isolated test of the actual function selected an unrelated
+   worker session during an API run, and returned a failed request as a
+   successful delivery. Pass the captured event ID into correlation and
+   distinguish pending, accepted, and failed admission. The public request
+   view currently omits `idempotencyKey`; do not assume that field is
+   available when fixing this. For recording before correction, run one
+   incident at a time and confirm its event ID in the session's render input.
+2. `test/agent.test.ts` hardcodes the `digger` organization instead of using
+   the configured target. The documented organization customization makes
+   that assertion fail. Local checks passed 76 of 77 example tests; all
+   6 application tests and typecheck passed. Doctor passed with its two
+   expected missing-local-secret warnings (live managed reads and PR
+   publication prove the deployed credentials work).
+
+Use the README's native inspection commands for recording. `session attach`
+shows messages and tool progress; command output and hook tool selection
+are in dashboard Events or `sessions tail --json`. Setup is already complete
+on this checkout; avoid displaying its credential-bearing URL in a recording.
