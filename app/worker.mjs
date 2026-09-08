@@ -30,6 +30,7 @@ export function runWorkerBatch(state, { maxSteps = 4 } = {}) {
       job.status = "completed";
       attempts.push({ step, jobId: job.id, outcome: "completed" });
     } catch (error) {
+      job.status = "failed";
       job.lastError = error.message;
       errors.push(error);
       attempts.push({ step, jobId: job.id, outcome: "failed", error: error.message });
