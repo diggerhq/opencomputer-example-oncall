@@ -128,3 +128,27 @@ These conclusions were checked against replay tool results, not only the
 agents' final reports. Both completed sessions were suspended for inspection.
 The canonical source defects remain unchanged, so the commands can be run
 again for recording. No video was recorded in this verification.
+
+## 2026-09-08 — Recording exposes an incomplete on-call workflow
+
+Igor's trial made the investigation look local to the laptop: the demo
+command triggers the incident locally and streams the remote agent's report
+into the same terminal. It prints tool names but omits completed tool results.
+The correction and replays actually run in the OpenComputer cloud workspace.
+Source is packaged at deployment, so no repository clone appears in the
+session. The current example runs captured-state replays, not a repository
+test suite, and does not produce a fix PR.
+
+The expected on-call outcome is a reviewable repository correction: fetch
+the Sentry evidence, check out the relevant source, reproduce the bug with a
+regression test, make the fix, run tests, and open a PR with the evidence.
+That workflow is not implemented by the successful replay runs above. Its
+next scope belongs in the examples workstream.
+
+Dashboard source at OpenComputer `c78110c` also corrects an earlier recording
+instruction: [webhook sessions](https://github.com/diggerhq/opencomputer/blob/c78110c/web/src/managed-agents/Session.tsx)
+offer Conversation and raw Events. The render inspector is available only
+in [Playground](https://github.com/diggerhq/opencomputer/blob/c78110c/web/src/managed-agents/Detail.tsx).
+There is no managed-session terminal, file browser, or patch viewer in that
+UI. The README now points to recorded render and tool-result events rather
+than promising a webhook-session inspector.

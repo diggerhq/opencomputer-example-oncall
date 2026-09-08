@@ -3,7 +3,7 @@
 API failures and stuck workers need different investigation procedures.
 This example pairs each service's runbook with its diagnostic tools and
 selects which set the model receives from a Sentry alert. One coding agent
-investigates both kinds of incident.
+investigates both kinds of incident in OpenComputer cloud sessions.
 
 With [OpenComputer Serverless Agents](https://docs.opencomputer.dev/agents/hooks),
 **a TypeScript function defines the instructions and tool catalog for each
@@ -19,7 +19,7 @@ The reporting app has two deliberately introduced defects:
 | One job keeps failing; healthy jobs never start | Worker runbook, `inspect_queue`, `replay_worker` | Isolating the bad job lets both healthy jobs complete |
 
 Both also get Sentry and source-editing tools. They read the event, reproduce
-the failure, edit a workspace copy of the app, and replay it to check the fix.
+the failure, edit the app in their cloud workspace, and replay it to check the fix.
 The deployment and model are identical; the worker runbook and diagnostic
 tool definitions are absent from the API investigation's model calls, and
 vice versa.
@@ -96,14 +96,21 @@ forwards the event ID and service to the OpenComputer webhook. The script
 supplies alert delivery and follows the investigation in the terminal.
 The completed session is suspended for inspection.
 
-The deployment includes the app source; Sentry carries a small synthetic
-snapshot with a matching release. Replays execute the agent's current edits
-in a fresh process. Sentry is the only external integration.
+The app source is packaged with the deployment; each cloud session starts
+with its own copy. There is no repository checkout during investigation.
+Sentry carries a small synthetic snapshot with a matching release. Replays
+execute the agent's current edits in a fresh process inside that session.
+Sentry is the only external integration.
 
-Compare the two **Tools** lines. The dashboard's session inspector shows the
-instructions and tools for each model step. Repeat either command for a new
-incident and workspace. The correction stays there; it is not deployed or
-marked resolved in Sentry. The repository's defects remain for the next run.
+Compare the two **Tools** lines. In the dashboard session's **Events** tab,
+`agent.rendered` contains the instructions and selected tools;
+`tool.completed` contains the recorded results. These webhook sessions show
+raw event JSON rather than the Playground's render inspector.
+
+Repeat either command for a new incident and cloud workspace. The correction
+stays there. The agent verifies it with replays; it does not run the repository's
+test suite or open a pull request. It does not deploy the correction or mark
+the Sentry issue resolved. The repository's defects remain for the next run.
 
 `npm run check` runs the fixture/tool tests, typecheck and authoring doctor.
 After changing source, `npm run setup` redeploys it. See [DX-NOTES.md](DX-NOTES.md)
