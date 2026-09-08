@@ -6,6 +6,7 @@
   "scripts": {
     "incident": "node scripts/incident.mjs",
     "demo": "node scripts/demo.mjs",
+    "follow": "node scripts/follow.mjs",
     "setup": "node scripts/setup.mjs",
     "prepare:agent": "node scripts/prepare-agent.mjs",
     "predoctor": "npm run prepare:agent",
@@ -14,7 +15,8 @@
     "deploy": "opencomputer deploy --alias development",
     "typecheck": "tsc --noEmit",
     "test": "tsx --test test/*.test.*",
-    "check": "npm run typecheck && npm test && npm run doctor"
+    "test:app": "node --test app/test/*.test.mjs",
+    "check": "npm run typecheck && npm test && npm run test:app && npm run doctor"
   },
   "dependencies": {
     "@opencomputer/agent": "0.5.2",

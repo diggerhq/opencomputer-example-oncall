@@ -3,6 +3,8 @@ import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 
 export const root = new URL("../", import.meta.url);
 const env = new URL(".env", root);
@@ -35,8 +37,23 @@ export async function opencomputerConfig() {
 
 export function serviceArgument() {
   const service = process.argv[2];
-  if (!["api", "worker"].includes(service) || process.argv.length !== 3) {
-    throw new Error("Choose api or worker, for example: npm run demo -- worker");
+  if (!["api", "worker"].includes(service) ||
+      !(process.argv.length === 3 || (process.argv.length === 4 && process.argv[3] === "--follow"))) {
+    throw new Error("Choose api or worker, optionally with --follow: npm run demo -- worker --follow");
   }
   return service;
+}
+
+export async function sourceCommit() {
+  const exec = promisify(execFile);
+  const git = async (args) => (await exec("git", args, { cwd: root, encoding: "utf8", timeout: 30_000 })).stdout.trim();
+  if (await git(["status", "--porcelain", "--", "app"])) {
+    throw new Error("Commit and push application changes before generating an incident.");
+  }
+  const commit = await git(["rev-parse", "HEAD"]);
+  const remote = await git(["ls-remote", "https://github.com/diggerhq/opencomputer-example-oncall.git", "refs/heads/main"]);
+  if (!/^[a-f0-9]{40}$/.test(commit) || remote.split(/\s/)[0] !== commit) {
+    throw new Error("Run the demo from the current published main commit so the cloud agent can check out the exact source.");
+  }
+  return commit;
 }

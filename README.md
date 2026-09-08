@@ -3,7 +3,8 @@
 API failures and stuck workers need different investigation procedures.
 This example pairs each service's runbook with its diagnostic tools and
 selects which set the model receives from a Sentry alert. One coding agent
-investigates both kinds of incident in OpenComputer cloud sessions.
+investigates both kinds of incident in OpenComputer: it clones the repository,
+writes a failing regression test, fixes the code, and opens a pull request.
 
 With [OpenComputer Serverless Agents](https://docs.opencomputer.dev/agents/hooks),
 **a TypeScript function defines the instructions and tool catalog for each
@@ -13,16 +14,14 @@ the context; the model decides how to investigate.
 
 The reporting app has two deliberately introduced defects:
 
-| Sentry incident | Context supplied to the model | What the agent verifies |
+| Sentry incident | Context supplied to the model | Fix to review |
 |---|---|---|
 | One report request returns 500; another works | API runbook, `inspect_record`, `replay_request` | A timezone fallback fixes the failing request and preserves the healthy response |
 | One job keeps failing; healthy jobs never start | Worker runbook, `inspect_queue`, `replay_worker` | Isolating the bad job lets both healthy jobs complete |
 
-Both also get Sentry and source-editing tools. They read the event, reproduce
-the failure, edit the app in their cloud workspace, and replay it to check the fix.
-The deployment and model are identical; the worker runbook and diagnostic
-tool definitions are absent from the API investigation's model calls, and
-vice versa.
+Both get Sentry, shell, file-editing, and PR tools. The deployment and model
+are identical; the worker runbook and diagnostic tool definitions are absent
+from the API investigation's model calls, and vice versa.
 
 ## A hook owns the tools and how to use them
 
@@ -48,12 +47,12 @@ const runbook = incident.service === "api"
   ? useApiDiagnostics()
   : useWorkerDiagnostics();
 
-return `Investigate this Sentry incident and verify a local correction.
+return `Investigate this Sentry incident, verify a fix, and open a PR.
 ${runbook}`;
 ```
 
 Another service can bring its own tools and runbook in another hook while
-sharing the Sentry reader, source-editing tools, and investigation loop.
+sharing the source checkout, testing, and PR workflow.
 Here, the alert's service stays fixed throughout the investigation.
 
 ## Run the failures
@@ -78,6 +77,9 @@ Create a Sentry Node.js development project and a
 [read token](https://docs.sentry.io/api/guides/create-auth-token/)
 with **Project: Read** and **Issue & Event: Read**. Copy `.env.example` to
 `.env` and fill in the project's DSN, token, organization slug and project slug.
+Set `GITHUB_TOKEN` with **Contents: Write** and **Pull requests: Write** on
+this repository. The configured GitHub target is `diggerhq/opencomputer-example-oncall`;
+the live demo requires permission to open branches and PRs there.
 
 ```sh
 npx opencomputer login
@@ -86,32 +88,51 @@ npm run demo -- api
 npm run demo -- worker
 ```
 
-`setup` creates an `oncall` project or reuses the local binding, uploads the
-Sentry token, deploys to **Development**, and saves a webhook credential
-locally. A managed connection attaches the Sentry token to the agent's GET
-requests; the token stays outside its workspace.
+`setup` creates an `oncall` project or reuses the local binding, uploads both
+tokens, deploys to **Development**, and saves a webhook credential locally.
+Managed connections attach credentials to Sentry and GitHub requests;
+neither token enters the agent's checkout.
 
-Each demo command triggers the exception, waits for its Sentry event, and
-forwards the event ID and service to the OpenComputer webhook. The script
-supplies alert delivery and follows the investigation in the terminal.
-The completed session is suspended for inspection.
+Run from the current published `main` commit. Each command triggers the
+exception on your laptop, records it in Sentry with its source commit and a
+small diagnostic snapshot, then forwards the locator to OpenComputer. This
+script supplies alert delivery. It prints the cloud session URL and exits;
+the agent continues independently.
 
-The app source is packaged with the deployment; each cloud session starts
-with its own copy. There is no repository checkout during investigation.
-Sentry carries a small synthetic snapshot with a matching release. Replays
-execute the agent's current edits in a fresh process inside that session.
-Sentry is the only external integration.
+## Follow the fix
+
+Open the session URL. The agent reads Sentry, clones this public repository,
+checks out the incident's commit, and investigates `app/`. It adds a regression
+test under `app/test/`, shows it failing, edits the affected service, and runs
+the application tests again. The final response links the fix PR.
+
+For readable commands, diffs, and test results in a terminal:
+
+```sh
+npm run follow -- api
+# Or trigger and follow a new incident together:
+npm run demo -- worker --follow
+```
+
+These commands display events from the cloud session. Following a completed
+session suspends it while retaining its workspace.
 
 Compare the two **Tools** lines. In the dashboard session's **Events** tab,
 `agent.rendered` contains the instructions and selected tools;
 `tool.completed` contains the recorded results. These webhook sessions show
 raw event JSON rather than the Playground's render inspector.
 
-Repeat either command for a new incident and cloud workspace. The correction
-stays there. The agent verifies it with replays; it does not run the repository's
-test suite or open a pull request. It does not deploy the correction or mark
-the Sentry issue resolved. The repository's defects remain for the next run.
+The PR tool reads the actual changed files and independently tests them
+against the original and corrected source before publishing. The same new
+test must fail before and pass after; existing application tests must pass.
+Only the affected service and its new regression test enter the PR. GitHub
+CI runs the application suite again.
 
-`npm run check` runs the fixture/tool tests, typecheck and authoring doctor.
+Leave demo PRs unmerged so the incidents remain reproducible. Every demo
+command creates a new event and fix branch; retrying publication for the
+same event reuses its PR. No fix is deployed or marked resolved in Sentry.
+
+`npm run test:app` runs the application suite. `npm run check` also checks the
+demo machinery, which intentionally verifies the two faults on `main`.
 After changing source, `npm run setup` redeploys it. See [DX-NOTES.md](DX-NOTES.md)
 for verification.

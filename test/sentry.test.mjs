@@ -14,6 +14,7 @@ function incident() {
   return {
     service: "worker",
     release: "oncall-reporting@abc123",
+    commit: "c".repeat(40),
     snapshot: { version: 1, jobs: [{ id: "job-1", rows: [{ account: "Example", total: 2 }] }] },
     error: new TypeError("Cannot read properties of null"),
     breadcrumbs: [{ category: "report-worker", message: "Job failed", level: "error" }],
@@ -38,7 +39,7 @@ function harness(input, { flush = true } = {}) {
     eventID: eventId,
     groupID: "12345",
     release: { version: input.release },
-    contexts: { oncall: { service: input.service, release: input.release, snapshot: structuredClone(input.snapshot) } },
+    contexts: { oncall: { service: input.service, release: input.release, commit: input.commit, snapshot: structuredClone(input.snapshot) } },
   };
   const responses = [new Response(JSON.stringify(event))];
   const options = {
@@ -98,6 +99,7 @@ test("will not dispatch if Sentry changes an event ID, release, service or snaps
     "event ID": (event) => { event.eventID = "f".repeat(32); },
     release: (event) => { event.release.version = "wrong-release"; },
     "context release": (event) => { event.contexts.oncall.release = "wrong-release"; },
+    commit: (event) => { event.contexts.oncall.commit = "d".repeat(40); },
     service: (event) => { event.contexts.oncall.service = "api"; },
     snapshot: (event) => { event.contexts.oncall.snapshot.jobs[0].rows = "[Array]"; },
   };
@@ -182,7 +184,7 @@ test("rejects invalid configuration without echoing credentials", async () => {
 test("the real SDK serializes the worker Error and complete replay snapshot without network access", async () => {
   const sdk = await import("@sentry/node");
   const { captureIncident } = await import("../app/incidents.mjs");
-  const input = await captureIncident("worker");
+  const input = { ...await captureIncident("worker"), commit: "c".repeat(40) };
   const payloads = [];
   let sentEvent;
   const result = await captureSentryIncident(input, config, {

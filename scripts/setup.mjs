@@ -21,6 +21,8 @@ async function cli(args, { input, quiet = false } = {}) {
 
 try {
   const sentry = sentryConfig();
+  const githubToken = process.env.GITHUB_TOKEN?.trim();
+  if (!githubToken) throw new Error("Set GITHUB_TOKEN in .env with Contents and Pull requests write access to this example repository.");
   await import("./prepare-agent.mjs");
   await cli(["doctor"]);
   if (!existsSync(new URL(".opencomputer/project.json", root))) {
@@ -28,6 +30,8 @@ try {
   }
   await cli(["secrets", "set", "SENTRY_AUTH_TOKEN", "--environment", "development",
     "--allow-origin", "https://sentry.io", "--value-stdin"], { input: sentry.token });
+  await cli(["secrets", "set", "GITHUB_TOKEN", "--environment", "development",
+    "--allow-origin", "https://api.github.com", "--value-stdin"], { input: githubToken });
   await cli(["deploy", "--alias", "development"]);
   const webhookPath = new URL(".opencomputer/webhook.json", root);
   if (!existsSync(webhookPath)) {

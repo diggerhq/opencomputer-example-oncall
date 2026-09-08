@@ -2,12 +2,12 @@ import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 export type Service = "api" | "worker";
-export type Locator = { service: Service; organization: string; project: string; eventId: string; release: string };
+export type Locator = { service: Service; organization: string; project: string; eventId: string; release: string; commit: string };
 export type Report = { id: string; title: string; timezone: string | null; createdAt: string };
 export type ApiSnapshot = { version: 1; request: { method: "GET"; path: string }; reports: Report[] };
 export type Job = { id: string; createdAt: string; status: string; attempts: number; reportId: string; rows: { account: string; total: number }[] | null };
 export type WorkerSnapshot = { version: 1; jobs: Job[]; maxSteps: number };
-export type Incident = Locator & { snapshot: ApiSnapshot | WorkerSnapshot };
+export type Incident = Locator & { snapshot: ApiSnapshot | WorkerSnapshot; issueUrl?: string };
 
 function object(value: unknown, label: string): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error(`${label} must be an object`);
@@ -37,7 +37,9 @@ export function parseLocator(value: unknown): Locator {
   if (![organization, project].every(slug => /^[a-zA-Z0-9][a-zA-Z0-9_-]*$/.test(slug))) throw new Error("organization and project must be Sentry slugs");
   const eventId = string(input.eventId, "eventId", 32);
   if (!/^[a-fA-F0-9]{32}$/.test(eventId)) throw new Error("eventId must be 32 hexadecimal characters");
-  return { service: input.service, organization, project, eventId: eventId.toLowerCase(), release: string(input.release, "release", 200) };
+  const commit = string(input.commit, "commit", 40);
+  if (!/^[a-f0-9]{40}$/.test(commit)) throw new Error("commit must be a full lowercase Git SHA");
+  return { service: input.service, organization, project, eventId: eventId.toLowerCase(), release: string(input.release, "release", 200), commit };
 }
 
 export function normalizeSnapshot(service: Service, value: unknown): ApiSnapshot | WorkerSnapshot {
@@ -87,14 +89,14 @@ export function normalizeSentryEvent(locator: Locator, value: unknown): Incident
   const eventRelease = typeof event.release === "string" ? event.release : object(event.release, "event.release").version;
   if (eventRelease !== locator.release || context.release !== locator.release) throw new Error("Sentry event release does not match the incident locator");
   if (context.service !== locator.service) throw new Error("Sentry event service does not match the incident locator");
+  if (context.commit !== locator.commit) throw new Error("Sentry event commit does not match the incident locator");
   const eventId = event.eventID ?? event.event_id ?? event.id;
   if (typeof eventId !== "string" || eventId.toLowerCase() !== locator.eventId) throw new Error("Sentry returned a different event ID");
-  return { ...locator, snapshot: normalizeSnapshot(locator.service, context.snapshot) };
-}
-
-export async function requireSourceRelease(release: string, cwd = process.cwd()) {
-  const metadata = object(JSON.parse(await readFile(path.join(cwd, "app/release.json"), "utf8")), "source release");
-  if (metadata.release !== release) throw new Error("The Sentry release does not match the bundled application source");
+  const group = String(event.groupID ?? "");
+  const issueUrl = /^\d+$/.test(group)
+    ? `https://sentry.io/organizations/${locator.organization}/issues/${group}/`
+    : `https://sentry.io/organizations/${locator.organization}/issues/?query=${locator.eventId}`;
+  return { ...locator, snapshot: normalizeSnapshot(locator.service, context.snapshot), issueUrl };
 }
 
 export async function saveIncident(incident: Incident, cwd = process.cwd()) {
@@ -106,9 +108,10 @@ export async function clearIncident(cwd = process.cwd()) {
   await rm(path.join(cwd, ".oncall/incident.json"), { force: true });
 }
 
-export async function loadIncident(service: Service, cwd = process.cwd()): Promise<Incident> {
+export async function loadIncident(service?: Service, cwd = process.cwd()): Promise<Incident> {
   const stored = object(JSON.parse(await readFile(path.join(cwd, ".oncall/incident.json"), "utf8")), "saved incident");
   const locator = parseLocator(stored);
-  if (locator.service !== service) throw new Error(`The captured incident is not for the ${service} service`);
-  return { ...locator, snapshot: normalizeSnapshot(service, stored.snapshot) };
+  if (service !== undefined && locator.service !== service) throw new Error(`The captured incident is not for the ${service} service`);
+  return { ...locator, snapshot: normalizeSnapshot(locator.service, stored.snapshot),
+    issueUrl: typeof stored.issueUrl === "string" ? stored.issueUrl : undefined };
 }

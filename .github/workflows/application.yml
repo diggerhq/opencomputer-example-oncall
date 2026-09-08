@@ -1,0 +1,17 @@
+name: Application tests
+on:
+  push:
+    paths: ['app/**', '.github/workflows/application.yml']
+  pull_request:
+    paths: ['app/**', '.github/workflows/application.yml']
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-node@v7.0.0
+        with:
+          node-version: 22
+      - run: node --test app/test/*.test.mjs

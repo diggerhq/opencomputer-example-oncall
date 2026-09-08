@@ -4,8 +4,11 @@ import { cp, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { execFileSync } from "node:child_process";
 import type { ToolDefinition, ToolExecutionContext } from "@opencomputer/agent";
-import { normalizeSentryEvent, normalizeSnapshot, parseLocator, requireSourceRelease, saveIncident, type ApiSnapshot, type WorkerSnapshot, type Locator } from "../opencomputer/agents/oncall/lib/incident.js";
+import { normalizeSentryEvent, normalizeSnapshot, parseLocator, saveIncident, type ApiSnapshot, type WorkerSnapshot, type Locator } from "../opencomputer/agents/oncall/lib/incident.js";
+import { requireCheckout } from "../opencomputer/agents/oncall/lib/checkout.js";
+import { repository } from "../opencomputer/agents/oncall/lib/target.js";
 import { inspectRecord, replayRequest } from "../opencomputer/agents/oncall/tools/api.js";
 import { inspectQueue, replayWorker } from "../opencomputer/agents/oncall/tools/worker.js";
 import { readSentryEvent } from "../opencomputer/agents/oncall/tools/sentry.js";
@@ -13,12 +16,12 @@ import { readSentryEvent } from "../opencomputer/agents/oncall/tools/sentry.js";
 const root = fileURLToPath(new URL("../", import.meta.url));
 const fixtureModule = new URL("../app/fixtures.mjs", import.meta.url).href;
 const fixtures = await import(fixtureModule);
-const locator: Locator = { service: "api", organization: "example", project: "reporting", eventId: "a".repeat(32), release: fixtures.RELEASE };
+const locator: Locator = { service: "api", organization: "example", project: "reporting", eventId: "a".repeat(32), release: fixtures.RELEASE, commit: "c".repeat(40) };
 const apiSnapshot = (): ApiSnapshot => fixtures.createApiSnapshot();
 const workerSnapshot = (): WorkerSnapshot => fixtures.createWorkerSnapshot();
 const event = (input = locator, snapshot: ApiSnapshot | WorkerSnapshot = apiSnapshot()) => ({
   eventID: input.eventId, release: { version: input.release }, title: "Captured fixture error",
-  contexts: { oncall: { service: input.service, release: input.release, snapshot } },
+  contexts: { oncall: { service: input.service, release: input.release, commit: input.commit, snapshot } },
   entries: [],
 });
 const context = (input: Record<string, unknown> = {}): ToolExecutionContext => ({
@@ -31,18 +34,26 @@ async function invoke(tool: ToolDefinition, input: Record<string, unknown> = {})
 async function withWorkspace(run: (cwd: string) => Promise<void>) {
   const cwd = await mkdtemp(path.join(os.tmpdir(), "oncall-tools-"));
   const previous = process.cwd();
+  const previousCommit = locator.commit;
   try {
-    await cp(path.join(root, "app"), path.join(cwd, "app"), { recursive: true });
-    await writeFile(path.join(cwd, "app/release.json"), JSON.stringify({ release: locator.release }));
+    const checkout = path.join(cwd, "repository");
+    await cp(path.join(root, "app"), path.join(checkout, "app"), { recursive: true });
+    const git = (args: string[]) => execFileSync("git", args, { cwd: checkout, encoding: "utf8" }).trim();
+    git(["init", "-q"]);
+    git(["remote", "add", "origin", `https://github.com/${repository}.git`]);
+    git(["add", "app"]);
+    git(["-c", "user.name=Test", "-c", "user.email=test@example.invalid", "-c", "commit.gpgsign=false", "commit", "-qm", "Fixture source"]);
+    locator.commit = git(["rev-parse", "HEAD"]);
     process.chdir(cwd);
     await run(cwd);
-  } finally { process.chdir(previous); await rm(cwd, { recursive: true, force: true }); }
+  } finally { locator.commit = previousCommit; process.chdir(previous); await rm(cwd, { recursive: true, force: true }); }
 }
 
 test("Sentry normalization requires the exact event, service, and source release", () => {
-  assert.deepEqual(normalizeSentryEvent(locator, event()), { ...locator, snapshot: apiSnapshot() });
+  assert.deepEqual(normalizeSentryEvent(locator, event()), { ...locator, snapshot: apiSnapshot(), issueUrl: `https://sentry.io/organizations/example/issues/?query=${locator.eventId}` });
   assert.throws(() => normalizeSentryEvent(locator, { ...event(), eventID: "b".repeat(32) }), /different event/);
   assert.throws(() => normalizeSentryEvent(locator, event({ ...locator, release: "another-release" })), /release/);
+  assert.throws(() => normalizeSentryEvent(locator, event({ ...locator, commit: "d".repeat(40) })), /commit/);
   assert.throws(() => normalizeSentryEvent(locator, event({ ...locator, service: "worker" }, workerSnapshot())), /service/);
   assert.throws(() => parseLocator({ ...locator, organization: "../example" }), /slugs/);
 });
@@ -59,8 +70,9 @@ test("captured state is bounded and excludes unrelated event fields", () => {
 
 test("source release mismatch stops before inspection can use unrelated source", async () => {
   await withWorkspace(async () => {
-    await requireSourceRelease(locator.release);
-    await assert.rejects(requireSourceRelease("another-release"), /bundled application source/);
+    await requireCheckout(locator);
+    await assert.rejects(requireCheckout({ ...locator, release: "another-release" }), /checked-out application source/);
+    await assert.rejects(requireCheckout({ ...locator, commit: "d".repeat(40) }), /exact Git commit/);
   });
 });
 
@@ -98,7 +110,7 @@ test("API replay sees source edits in a fresh process and preserves a healthy co
     assert.equal(record.report.timezone, null);
     assert.equal((await invoke(replayRequest)).response.status, 500);
     assert.equal((await invoke(replayRequest, { reportId: "report-current" })).response.status, 200);
-    const sourcePath = path.join(cwd, "app/api.mjs");
+    const sourcePath = path.join(cwd, "repository/app/api.mjs");
     const original = await readFile(sourcePath, "utf8");
     await writeFile(sourcePath, original.replace("report.timezone.trim()", '(report.timezone ?? "UTC").trim()'));
     assert.equal((await invoke(replayRequest)).response.status, 200);
@@ -115,7 +127,7 @@ test("worker replay executes current source, retains the bad job, and makes prog
     assert.equal((await invoke(inspectQueue)).jobs.length, 3);
     const before = await invoke(replayWorker);
     assert.deepEqual(before.attempts.map((attempt: { jobId: string }) => attempt.jobId), Array(4).fill("job-101"));
-    const sourcePath = path.join(cwd, "app/worker.mjs");
+    const sourcePath = path.join(cwd, "repository/app/worker.mjs");
     const original = await readFile(sourcePath, "utf8");
     await writeFile(sourcePath, original.replace("job.lastError = error.message;", 'job.status = "failed";\n      job.lastError = error.message;'));
     const after = await invoke(replayWorker);

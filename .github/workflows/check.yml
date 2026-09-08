@@ -1,5 +1,15 @@
-name: Check
-on: [push, pull_request]
+name: Demo harness
+on:
+  push:
+    branches: [main]
+  pull_request:
+    paths:
+      - 'opencomputer/**'
+      - 'scripts/**'
+      - 'test/**'
+      - 'package*.json'
+      - 'tsconfig.json'
+      - '.github/workflows/check.yml'
 permissions:
   contents: read
 jobs:

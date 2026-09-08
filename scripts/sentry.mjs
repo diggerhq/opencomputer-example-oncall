@@ -8,10 +8,11 @@ const MAX_CONTEXT_BYTES = 64 * 1024;
 function incidentContext(incident) {
   if (!incident || !["api", "worker"].includes(incident.service) ||
       typeof incident.release !== "string" || !incident.release || incident.release.length > 200 ||
+      !/^[a-f0-9]{40}$/.test(incident.commit ?? "") ||
       !(incident.error instanceof Error)) {
-    throw new Error("Expected a captured api or worker Error with a release and snapshot.");
+    throw new Error("Expected a captured api or worker Error with a release, full Git commit, and snapshot.");
   }
-  const context = { service: incident.service, release: incident.release, snapshot: incident.snapshot };
+  const context = { service: incident.service, release: incident.release, commit: incident.commit, snapshot: incident.snapshot };
   let json;
   try {
     json = JSON.stringify(context);
@@ -48,6 +49,7 @@ function verifyEvent(event, eventId, expected) {
   const oncall = event?.contexts?.oncall;
   if (returnedId !== eventId || release !== expected.release ||
       oncall?.service !== expected.service || oncall?.release !== expected.release ||
+      oncall?.commit !== expected.commit ||
       !isDeepStrictEqual(oncall?.snapshot, expected.snapshot)) {
     throw new Error("Sentry did not preserve the exact incident ID, release and snapshot; the incident was not dispatched.");
   }

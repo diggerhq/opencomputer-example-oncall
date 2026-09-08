@@ -3,8 +3,8 @@ import test from "node:test";
 import type { AgentInput, ModelSelection, ResourceReference } from "@opencomputer/agent";
 import Agent from "../opencomputer/agents/oncall/agent.js";
 
-const locator = { organization: "example", project: "reporting", eventId: "a".repeat(32), release: "oncall-reporting@test" };
-const common = ["glob", "grep", "read", "read_sentry_event", "shell", "write"];
+const locator = { organization: "example", project: "reporting", eventId: "a".repeat(32), release: "oncall-reporting@test", commit: "c".repeat(40) };
+const common = ["glob", "grep", "read", "read_sentry_event", "open_fix_pull_request", "shell", "write"];
 
 // The published package has no render-test API. This test-only bridge records
 // actual useInput/useTool calls; live provider-request filtering is tested separately.

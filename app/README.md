@@ -7,5 +7,8 @@
 Each replay starts from a fresh copy of that state and prints the response or
 job attempts and outputs. No dependencies or external services are required.
 
-`release.json` is generated when this source is packaged for an agent. The
-incident's Sentry release must match that source before investigation begins.
+`test/` contains ordinary application tests. Run them from the repository root
+with `node --test app/test/*.test.mjs`. A fix PR adds a regression test here.
+
+`release.mjs` identifies the source captured by Sentry. An incident also records
+the Git commit so the cloud agent can clone and check out that exact source.
